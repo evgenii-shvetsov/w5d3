@@ -15,6 +15,11 @@ class Users
     attr_accessor :id, :fname, :lname
     #User::find_by_name(fname, lname)
     #User.new('fname' => 'Ned', 'lname' => 'Ruggeri', 'is_instructor' => true)
+    def self.all
+        data = QuestionsDatabase.instance.execute("SELECT * FROM users")
+        data.map { |datum| Users.new(datum) }
+    end
+
     def initialize(options)
         @id = options['id']
         @fname = options['fname']
@@ -44,6 +49,18 @@ class Users
         Users.new(person_data) # convert array to a string 
     end
 
+    def authored_questions
+        Questions.find_by_author_id(id)
+    end
+
+    def authored_replies
+        Reply.find_by_user_id(id)
+    end
+
+    def followed_questions
+        QuestionFollows.followed_questions_for_user_id(id)
+    end
+
 end
 
 class Questions
@@ -64,6 +81,30 @@ class Questions
 
         Questions.new(data.first)
     end
+
+    def self.find_by_author_id(author_id)
+        que = QuestionsDatabase.instance.execute(<<-SQL, author_id)
+            SELECT * 
+            FROM questions 
+            WHERE author_id = ?
+        SQL
+        return nil unless que.length > 0
+
+        Questions.new(que.first)
+    end
+
+    def author
+        Users.find_by_id(id)
+    end
+
+    def replies
+        Reply.find_by_question_id(id)
+    end
+
+    def followers
+        QuestionFollows.followers_for_question_id(id)
+    end
+
 end
 
 class QuestionFollows
@@ -83,6 +124,31 @@ class QuestionFollows
 
         QuestionFollows.new(data.first)
     end
+    def self.followers_for_question_id(question_id)
+        data = QuestionsDatabase.instance.execute(<<-SQL, question_id)
+            SELECT users.*
+            FROM users
+            JOIN questions_follows
+            ON questions_follows.user_id = users.id
+            WHERE question_id = ?
+        SQL
+        return nil unless data.length > 0 # person is stored in an array!
+        data.map {|el| Users.new(el)} 
+    end
+
+    def self.followed_questions_for_user_id(user_id)
+        data = QuestionsDatabase.instance.execute(<<-SQL, user_id)
+            SELECT questions.*
+            FROM questions
+            JOIN questions_follows 
+            ON questions.id = questions_follows.question_id
+            WHERE  user_id = ?
+        SQL
+        return nil unless data.length > 0 # person is stored in an array!
+        data.map {|el| Questions.new(el)} 
+    end
+
+
 end
 
 class Replies
@@ -93,7 +159,7 @@ class Replies
         @question_id = options['question_id']
         @parent_reply_id = options['parent_reply_id']
         @user_id = options['user_id']
-        @body = oprions['body']
+        @body = options['body']
     end
     #find_by_id
     def self.find_by_id(id)
@@ -104,8 +170,58 @@ class Replies
         SQL
         return nil unless replies.length > 0 # person is stored in an array!
 
-        Users.new(replies.first)
+        Replies.new(replies.first)
     end
+
+    def self.find_by_parent_reply_id(parent_reply_id)
+        replies = QuestionsDatabase.instance.execute(<<-SQL, parent_reply_id)
+        SELECT * 
+        FROM replies 
+        WHERE parent_reply_id = ?
+    SQL
+    return nil unless replies.length > 0 # person is stored in an array!
+
+    Replies.new(replies.first)
+    end
+
+    def self.find_by_user_id(user_id)
+        re = QuestionsDatabase.instance.execute(<<-SQL, user_id)
+            SELECT * 
+            FROM replies 
+            WHERE user_id = ?
+        SQL
+        return nil unless re.length > 0 # person is stored in an array!
+
+        Replies.new(re.first)
+    end
+
+    def self.find_by_question_id(question_id)
+        re = QuestionsDatabase.instance.execute(<<-SQL, question_id)
+            SELECT * 
+            FROM replies 
+            WHERE question_id = ?
+        SQL
+        return nil unless re.length > 0 # person is stored in an array!
+
+        Replies.new(re.first)
+    end
+
+    def author
+        Users.find_by_id(id)
+    end
+
+    def question
+        Questions.find_by_id(id)
+    end
+
+    def parent_reply
+        Replies.find_by_id(parent_reply_id)
+    end
+
+    def child_replies
+        Replies.find_by_parent_reply_id(id)
+    end
+
 end
 
 class QuestionLikes
@@ -125,6 +241,6 @@ class QuestionLikes
         SQL
         return nil unless question_likes.length > 0 # person is stored in an array!
 
-        Users.new(question_likes.first)
+        QuestionLikes.new(question_likes.first)
     end
 end
